@@ -59,18 +59,18 @@ class VoiceResponse(BaseModel):
 def process_kukko_message(message: str) -> ChatResponse:
     """Core Kukko brain pipeline used by both text and voice endpoints."""
     message = message.strip()
-    
+
     if not message:
         return ChatResponse(reply="Squawk! I didn't hear anything!", emotion="annoyed")
-        
+
     if not check_safety(message):
         safe_resp = get_safety_override_response()
         return ChatResponse(reply=safe_resp["reply"], emotion=safe_resp["emotion"])
-        
+
     intent = detect_intent(message)
     system_prompt = get_system_prompt()
     llm_resp = get_llm_response(system_prompt, message, intent)
-    
+
     return ChatResponse(reply=llm_resp.reply, emotion=llm_resp.emotion)
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -88,11 +88,11 @@ async def voice_endpoint(file: UploadFile = File(...)):
     """
     if not file:
         raise HTTPException(status_code=400, detail="No audio file provided.")
-        
+
     audio_bytes = await file.read()
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio file.")
-        
+
     # 1. Speech to Text
     transcript = get_sarvam_stt(audio_bytes, filename=file.filename)
     if not transcript:
@@ -102,13 +102,13 @@ async def voice_endpoint(file: UploadFile = File(...)):
             emotion="confused",
             audio=""
         )
-        
+
     # 2. Kukko Brain
     brain_resp = process_kukko_message(transcript)
-    
+
     # 3. Text to Speech
     audio_b64 = get_sarvam_tts(brain_resp.reply)
-    
+
     return VoiceResponse(
         transcript=transcript,
         reply=brain_resp.reply,

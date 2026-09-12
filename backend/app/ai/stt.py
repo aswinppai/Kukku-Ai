@@ -7,19 +7,19 @@ def get_sarvam_stt(audio_bytes: bytes, filename: str = "audio.wav") -> str:
     Falls back to a mock response if no API key is set.
     """
     api_key = os.environ.get("SARVAM_API_KEY")
-    
+
     if not api_key:
         return _mock_stt(audio_bytes)
-    
+
     url = "https://api.sarvam.ai/speech-to-text"
     headers = {
         "api-subscription-key": api_key
     }
-    
+
     files = {
         "file": (filename, audio_bytes, "audio/wav")
     }
-    
+
     try:
         # We use a synchronous request here for simplicity, but httpx.AsyncClient is also good.
         with httpx.Client() as client:

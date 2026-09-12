@@ -9,16 +9,16 @@ def get_sarvam_tts(text: str) -> str:
     Falls back to a mock response if no API key is set.
     """
     api_key = os.environ.get("SARVAM_API_KEY")
-    
+
     if not api_key:
         return _mock_tts(text)
-        
+
     url = "https://api.sarvam.ai/text-to-speech"
     headers = {
         "api-subscription-key": api_key,
         "Content-Type": "application/json"
     }
-    
+
     payload = {
         "inputs": [text],
         "target_language_code": "ml-IN", # Manglish/Malayalam context
@@ -30,7 +30,7 @@ def get_sarvam_tts(text: str) -> str:
         "enable_preprocessing": True,
         "model": "bulbul:v1"
     }
-    
+
     try:
         with httpx.Client() as client:
             response = client.post(url, headers=headers, json=payload, timeout=15.0)

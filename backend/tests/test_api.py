@@ -62,7 +62,7 @@ def test_voice_endpoint_success_mock():
     # Provide a dummy audio file (short length) -> mock STT returns "Hello Kukko"
     dummy_audio = b"dummy_audio_content"
     response = client.post(
-        "/api/voice", 
+        "/api/voice",
         files={"file": ("test.wav", dummy_audio, "audio/wav")}
     )
     assert response.status_code == 200
@@ -78,7 +78,7 @@ def test_voice_endpoint_long_audio_mock():
     # Long audio -> mock STT returns "I am going to study now" -> triggers productivity intent
     dummy_audio = b"0" * 1500
     response = client.post(
-        "/api/voice", 
+        "/api/voice",
         files={"file": ("test.wav", dummy_audio, "audio/wav")}
     )
     assert response.status_code == 200
