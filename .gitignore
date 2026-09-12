@@ -183,3 +183,8 @@ logs/
 *.wav
 *.mp3
 *.ogg
+
+.env
+__pycache__/
+*.pyc
+venv/

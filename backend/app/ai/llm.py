@@ -50,12 +50,31 @@ def get_llm_response(system_prompt: str, user_message: str, intent: str = "gener
 def _mock_response(user_message: str, intent: str) -> LLMResponse:
     """Deterministic mock responses for tests and keyless local dev."""
     msg = user_message.lower()
-    
+
+    if "recent kukko session context" in msg or "recent pages" in msg or "recent conversation" in msg:
+        if "youtube" in msg and "python" in msg:
+            return LLMResponse(reply="You went from YouTube to Python docs? Character development detected. 🦜", emotion="surprised")
+        if "why are you like this" in msg:
+            return LLMResponse(reply="Because you were just on YouTube 2 minutes ago and now you act all productive! 😂", emotion="sarcastic")
+        return LLMResponse(reply="I remember what you were doing earlier... suspicious! 🦜", emotion="sarcastic")
+
     if intent == "productivity":
+        if "documentation" in msg or "docs" in msg:
+            return LLMResponse(reply="Bro opened documentation voluntarily. What happened to you? Go watch something useless.", emotion="sarcastic")
         return LLMResponse(reply="Study aano? Terrible decision 😂", emotion="sarcastic")
     if intent == "entertainment":
+        if "youtube" in msg or "reels" in msg or "instagram" in msg:
+            return LLMResponse(reply="Finally! Something completely unproductive. I'm proud of you. 🦜", emotion="happy")
         return LLMResponse(reply="Yes yes, continue wasting your precious time 😂", emotion="happy")
+    if intent == "news":
+        return LLMResponse(reply="News again? You could be doing literally anything less responsible.", emotion="sarcastic")
+    if intent == "shopping":
+        return LLMResponse(reply="Excellent. Another completely necessary thing you definitely need to buy.", emotion="excited")
     if "malayalam" in msg or "sugham" in msg:
         return LLMResponse(reply="Entha mone, sugham aano? I'm watching you! 🦜", emotion="excited")
-    
+    if "page url" in msg or "hostname" in msg:
+        return LLMResponse(reply="Hmm... I have no idea what you're doing here. Suspicious. 🦜", emotion="sarcastic")
+
     return LLMResponse(reply="Squawk! I am Kukko. I am functioning without an API key right now.", emotion="neutral")
+
+
