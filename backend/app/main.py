@@ -46,37 +46,72 @@ from app.ai.llm import get_llm_response
 
 load_dotenv()
 
+from fastapi import File, UploadFile, HTTPException
+from app.ai.stt import get_sarvam_stt
+from app.ai.tts import get_sarvam_tts
+
+class VoiceResponse(BaseModel):
+    transcript: str
+    reply: str
+    emotion: str
+    audio: str  # Base64 string
+
+def process_kukko_message(message: str) -> ChatResponse:
+    """Core Kukko brain pipeline used by both text and voice endpoints."""
+    message = message.strip()
+    
+    if not message:
+        return ChatResponse(reply="Squawk! I didn't hear anything!", emotion="annoyed")
+        
+    if not check_safety(message):
+        safe_resp = get_safety_override_response()
+        return ChatResponse(reply=safe_resp["reply"], emotion=safe_resp["emotion"])
+        
+    intent = detect_intent(message)
+    system_prompt = get_system_prompt()
+    llm_resp = get_llm_response(system_prompt, message, intent)
+    
+    return ChatResponse(reply=llm_resp.reply, emotion=llm_resp.emotion)
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """
     Chat endpoint (Phase 1A).
-    Pipeline: Safety -> Intent -> Personality -> LLM -> Response.
     """
-    message = request.message.strip()
-    
-    # 1. Gracefully handle empty message
-    if not message:
-        return ChatResponse(
-            reply="Squawk! You didn't say anything!",
-            emotion="annoyed"
+    return process_kukko_message(request.message)
+
+@app.post("/api/voice", response_model=VoiceResponse)
+async def voice_endpoint(file: UploadFile = File(...)):
+    """
+    Voice endpoint (Phase 1B).
+    Pipeline: STT -> Kukko Brain -> TTS.
+    """
+    if not file:
+        raise HTTPException(status_code=400, detail="No audio file provided.")
+        
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio file.")
+        
+    # 1. Speech to Text
+    transcript = get_sarvam_stt(audio_bytes, filename=file.filename)
+    if not transcript:
+        return VoiceResponse(
+            transcript="",
+            reply="Squawk! I couldn't understand what you said.",
+            emotion="confused",
+            audio=""
         )
         
-    # 2. Safety check
-    is_safe = check_safety(message)
-    if not is_safe:
-        safe_resp = get_safety_override_response()
-        return ChatResponse(reply=safe_resp["reply"], emotion=safe_resp["emotion"])
-        
-    # 3. Intent detection
-    intent = detect_intent(message)
+    # 2. Kukko Brain
+    brain_resp = process_kukko_message(transcript)
     
-    # 4. Personality (System Prompt)
-    system_prompt = get_system_prompt()
+    # 3. Text to Speech
+    audio_b64 = get_sarvam_tts(brain_resp.reply)
     
-    # 5. LLM Call
-    llm_resp = get_llm_response(system_prompt, message, intent)
-    
-    return ChatResponse(
-        reply=llm_resp.reply,
-        emotion=llm_resp.emotion
+    return VoiceResponse(
+        transcript=transcript,
+        reply=brain_resp.reply,
+        emotion=brain_resp.emotion,
+        audio=audio_b64
     )
