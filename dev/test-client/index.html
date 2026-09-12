@@ -1,38 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kukko Dev Test Client</title>
+    <title>Kukko Voice Debug Client</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div class="container">
-        <h1>Kukko Dev Test Client</h1>
-        
+        <h1>Kukko Voice Debug Client</h1>
+
         <div class="card health-section">
             <h2>System Status</h2>
             <button id="health-btn">Check Health</button>
             <div id="health-status" class="status-box">Unknown</div>
         </div>
 
+        <div class="card voice-section">
+            <h2>Voice Interface</h2>
+
+            <!-- Kukko character (Part 5): reacts to UI state + emotion via data attributes -->
+            <div class="parrot-stage">
+                <div id="kukko-parrot" data-state="idle" data-emotion="neutral" aria-live="polite">
+                    <span class="parrot-body">🦜</span>
+                    <span class="parrot-shadow"></span>
+                </div>
+            </div>
+
+            <div class="voice-controls">
+                <button id="mic-btn">Talk to Kukko</button>
+                <button id="record-again-btn" class="hidden">Record Again</button>
+                <div id="kukko-state" class="kukko-state state-idle">IDLE</div>
+            </div>
+
+            <!-- Voice-specific, user-friendly errors (Part 10) -->
+            <div id="voice-error" class="error-box hidden"></div>
+
+            <div class="debug-info">
+                <h3>Recording information:</h3>
+                <ul>
+                    <li>MIME type: <span id="debug-mime">-</span></li>
+                    <li>File size: <span id="debug-size">-</span> bytes</li>
+                    <li>Duration: <span id="debug-duration">-</span> ms</li>
+                </ul>
+                <h3>Raw API status:</h3>
+                <p id="debug-api-status">-</p>
+            </div>
+
+            <hr>
+
+            <h3>After API response:</h3>
+
+            <h4>Transcript:</h4>
+            <div class="transcript-box" id="voice-transcript">-</div>
+
+            <h4>Kukko:</h4>
+            <div class="response-container">
+                <p><span id="voice-reply">-</span></p>
+                <p><strong>Emotion:</strong> <span id="voice-emotion">-</span></p>
+            </div>
+
+            <h4>Audio:</h4>
+            <div class="audio-controls">
+                <button id="play-btn" disabled>Play Response</button>
+                <button id="kukko-voice-toggle" class="kukko-voice-toggle is-on">🦜 Kukko Voice: ON</button>
+                <span id="voice-latency" class="latency-box"></span>
+            </div>
+        </div>
+
+        <!-- Conversation history (Part 6): full session kept visible -->
+        <div class="card conversation-section">
+            <h2>Conversation</h2>
+            <div id="history-list" class="history-list">
+                <div class="history-empty">Talk to Kukko to start a conversation…</div>
+            </div>
+        </div>
+
         <div class="card chat-section">
-            <h2>Chat Test</h2>
+            <h2>Text Chat (Phase 1A)</h2>
             <div class="chat-controls">
                 <textarea id="chat-input" placeholder="Type a message to Kukko..."></textarea>
                 <button id="chat-btn">Send</button>
             </div>
-            
-            <h3>Response:</h3>
             <div class="response-container">
                 <p><strong>Reply:</strong> <span id="chat-reply">-</span></p>
                 <p><strong>Emotion:</strong> <span id="chat-emotion">-</span></p>
             </div>
         </div>
-        
+
         <div id="error-box" class="error-box hidden"></div>
+
+        <!-- Developer diagnostics (Part 7): kept out of the demo flow -->
+        <div class="card debug-section">
+            <h2>Developer Diagnostics</h2>
+            <p class="debug-note">Safe technical details only — raw base64 audio and secrets are never shown here.</p>
+            <div id="debug-log" class="debug-log"></div>
+        </div>
     </div>
 
+    <script src="kukko-voice.js"></script>
     <script src="app.js"></script>
 </body>
+
 </html>

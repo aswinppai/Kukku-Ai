@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Kukko AI Companion",
+  "version": "1.0.0",
+  "description": "Proactive oppositional browser companion parrot powered by Kukko AI",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*",
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "css": ["style.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Kukko AI Companion"
+  }
+}
