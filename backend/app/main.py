@@ -38,10 +38,45 @@ async def health_check():
         version="0.1.0"
     )
 
+from dotenv import load_dotenv
+from app.kukko.safety import check_safety, get_safety_override_response
+from app.kukko.intent import detect_intent
+from app.kukko.personality import get_system_prompt
+from app.ai.llm import get_llm_response
+
+load_dotenv()
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    """Chat endpoint returning a deterministic dummy response for Phase 0."""
+    """
+    Chat endpoint (Phase 1A).
+    Pipeline: Safety -> Intent -> Personality -> LLM -> Response.
+    """
+    message = request.message.strip()
+    
+    # 1. Gracefully handle empty message
+    if not message:
+        return ChatResponse(
+            reply="Squawk! You didn't say anything!",
+            emotion="annoyed"
+        )
+        
+    # 2. Safety check
+    is_safe = check_safety(message)
+    if not is_safe:
+        safe_resp = get_safety_override_response()
+        return ChatResponse(reply=safe_resp["reply"], emotion=safe_resp["emotion"])
+        
+    # 3. Intent detection
+    intent = detect_intent(message)
+    
+    # 4. Personality (System Prompt)
+    system_prompt = get_system_prompt()
+    
+    # 5. LLM Call
+    llm_resp = get_llm_response(system_prompt, message, intent)
+    
     return ChatResponse(
-        reply="Kukko backend is working.",
-        emotion="neutral"
+        reply=llm_resp.reply,
+        emotion=llm_resp.emotion
     )
