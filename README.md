@@ -57,7 +57,7 @@ User → Browser Extension → Backend → AI Processing → Response → Kukko
 ## Installation
 
 ```bash
-git clonehttps://github.com/aswinppai/Kukku-Ai
+git clone https://github.com/aswinppai/Kukku-Ai
 cd Kukko-Ai
 cd backend
 python -m venv venv
