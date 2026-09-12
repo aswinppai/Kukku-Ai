@@ -442,3 +442,29 @@ def test_chat_session_safety_override():
     data = response.json()
     assert "professional" in data["reply"].lower() or "support" in data["reply"].lower()
     assert data["emotion"] == "neutral"
+
+def test_chat_google_search_redirection():
+    response = client.post("/api/chat", json={
+        "message": "what is the capital of france"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert "https://www.google.com/search?q=" in data["reply"]
+    assert "google" in data["reply"].lower()
+    assert data["emotion"] == "sarcastic"
+
+def test_safety_no_false_positive_on_study_words():
+    """Verify words containing 'die' (studies, audience, remedies) do NOT trigger safety helpline."""
+    response = client.post("/api/context", json={
+        "url": "https://tuition.example.com/studies",
+        "title": "Class 8, 9 Studies and Tuition",
+        "hostname": "tuition.example.com",
+        "visible_text": "Online tuition for high school studies, audience lectures, and remedies for exam stress."
+    })
+    assert response.status_code == 200
+    data = response.json()
+    # Must NOT trigger the helpline override!
+    assert "helpline" not in data["reply"].lower()
+    assert "professional" not in data["reply"].lower()
+
+

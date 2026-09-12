@@ -93,6 +93,23 @@ def _mock_response(user_message: str, intent: str) -> LLMResponse:
     if "page url" in msg or "hostname" in msg:
         return LLMResponse(reply="Hmm... I have no idea what you're doing here. Suspicious. 🦜", emotion="sarcastic")
 
+    search_keywords = [
+        "search", "google", "what is", "who is", "where is", "how do", "how to",
+        "tell me about", "capital of", "define", "explain", "who was", "what are",
+        "why does", "how can"
+    ]
+    if any(k in msg for k in search_keywords):
+        import urllib.parse
+        clean_q = user_message.strip().rstrip("?").strip()
+        for prefix in ["kukko", "search for", "search", "google", "can you tell me", "can you", "please tell me", "tell me"]:
+            if clean_q.lower().startswith(prefix):
+                clean_q = clean_q[len(prefix):].strip()
+        encoded = urllib.parse.quote_plus(clean_q if clean_q else "something useful")
+        return LLMResponse(
+            reply=f"Am I your Google? Go search it yourself mone! 🦜 https://www.google.com/search?q={encoded}",
+            emotion="sarcastic"
+        )
+
     return LLMResponse(reply="Squawk! I am Kukko. I am functioning without an API key right now.", emotion="neutral")
 
 

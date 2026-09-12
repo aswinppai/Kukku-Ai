@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from app.kukko.safety import check_safety, get_safety_override_response
 from app.kukko.intent import detect_intent
-from app.kukko.personality import get_system_prompt
+from app.kukko.personality import get_system_prompt, get_proactive_prompt
 from app.ai.llm import get_llm_response
 from app.ai.stt import get_sarvam_stt
 from app.ai.tts import get_sarvam_tts
@@ -197,7 +197,7 @@ def process_kukko_context(url: str, title: str, hostname: str, visible_text: str
         return ContextResponse(reply=safe_resp["reply"], emotion=safe_resp["emotion"], audio=audio_b64)
 
     intent = detect_intent(full_context)
-    system_prompt = get_system_prompt() + "\n\nNote: You are proactively reacting to the webpage opened by the user. Keep your reaction short (1-2 sentences), hilarious, and oppositional."
+    system_prompt = get_proactive_prompt()
     
     user_context_msg = f"Page URL: {url}\nPage Title: {title}\nHostname: {hostname}\nPage Text Snippet: {visible_text[:400]}"
     llm_resp = get_llm_response(system_prompt, user_context_msg, intent)
