@@ -44,6 +44,7 @@ No special hardware is required.
 A laptop or desktop computer with a microphone and internet connection is sufficient.
 
 # Implementation
+https://drive.google.com/drive/folders/10RpWH2nY0VyL2hTlXHkbTjrHJNHoSZJb?usp=sharing
 
 ## For Software
 
