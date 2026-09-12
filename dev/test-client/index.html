@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kukko Dev Test Client</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Kukko Dev Test Client</h1>
+        
+        <div class="card health-section">
+            <h2>System Status</h2>
+            <button id="health-btn">Check Health</button>
+            <div id="health-status" class="status-box">Unknown</div>
+        </div>
+
+        <div class="card chat-section">
+            <h2>Chat Test</h2>
+            <div class="chat-controls">
+                <textarea id="chat-input" placeholder="Type a message to Kukko..."></textarea>
+                <button id="chat-btn">Send</button>
+            </div>
+            
+            <h3>Response:</h3>
+            <div class="response-container">
+                <p><strong>Reply:</strong> <span id="chat-reply">-</span></p>
+                <p><strong>Emotion:</strong> <span id="chat-emotion">-</span></p>
+            </div>
+        </div>
+        
+        <div id="error-box" class="error-box hidden"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

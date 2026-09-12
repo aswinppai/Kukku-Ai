@@ -1,0 +1,1 @@
+# Kukko core domain module
