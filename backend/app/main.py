@@ -1,3 +1,4 @@
+import os
 from typing import Optional, List
 import time
 import asyncio
@@ -22,10 +23,15 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# Configure CORS for local development & browser extension
+# Configure CORS for local development & browser extension (supporting web browsing on HTTPS pages)
+cors_origin_regex = os.environ.get(
+    "CORS_ORIGIN_REGEX",
+    r"https://.*|http://(localhost|127\.0\.0\.1)(:\d+)?|chrome-extension://.*|null"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?|chrome-extension://.*",
+    allow_origin_regex=cors_origin_regex,
     allow_origins=[
         "http://localhost:8080",
         "http://127.0.0.1:8080",
@@ -34,6 +40,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_private_network=True,
 )
 
 class HealthResponse(BaseModel):

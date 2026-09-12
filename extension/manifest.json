@@ -5,7 +5,8 @@
   "description": "Proactive oppositional browser companion parrot powered by Kukko AI",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "http://127.0.0.1:8000/*",

@@ -24,24 +24,42 @@ def get_llm_response(system_prompt: str, user_message: str, intent: str = "gener
         # We append a small hint based on intent if it helps the LLM
         intent_hint = f"\n[System note: Detected intent is '{intent}']"
         
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=user_message + intent_hint,
-            config=genai.types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                response_mime_type="application/json",
-            ),
-        )
+        primary_model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+        candidate_models = [primary_model]
+        for fallback in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash"]:
+            if fallback not in candidate_models:
+                candidate_models.append(fallback)
         
-        # Parse the JSON response
-        data = json.loads(response.text)
+        last_error = None
+        for model in candidate_models:
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=user_message + intent_hint,
+                    config=genai.types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        response_mime_type="application/json",
+                    ),
+                )
+                
+                # Parse the JSON response
+                data = json.loads(response.text)
+                return LLMResponse(
+                    reply=data.get("reply", "Squawk! Something went wrong in my parrot brain."),
+                    emotion=data.get("emotion", "neutral")
+                )
+            except Exception as e:
+                last_error = e
+                print(f"LLM model {model} failed: {e}")
+                continue
+        
+        print(f"All LLM candidate models failed: {last_error}")
         return LLMResponse(
-            reply=data.get("reply", "Squawk! Something went wrong in my parrot brain."),
-            emotion=data.get("emotion", "neutral")
+            reply="Squawk! My brain disconnected for a second. Try again!",
+            emotion="surprised"
         )
     except Exception as e:
         print(f"LLM Error: {e}")
-        # Graceful fallback on LLM failure
         return LLMResponse(
             reply="Squawk! My brain disconnected for a second. Try again!",
             emotion="surprised"

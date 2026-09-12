@@ -220,13 +220,13 @@
 }
 
 #kukko-companion-root .kukko-msg-emotion-tag {
-    display: inline-block;
+    display: block;
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     color: #64748b;
-    margin-bottom: 4px;
-    letter-spacing: 0.4px;
+    margin-bottom: 5px;
+    letter-spacing: 0.5px;
 }
 
 /* Thinking Dots Animation */
@@ -286,9 +286,37 @@
     background: #0369a1;
 }
 
-#kukko-chat-send-btn:disabled {
-    background: #cbd5e1;
-    cursor: not-allowed;
+#kukko-chat-mic-btn {
+    background: #f1f5f9;
+    color: #0f172a;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 50%;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 15px;
+    transition: background 0.2s, transform 0.1s, border-color 0.2s;
+    flex-shrink: 0;
+}
+
+#kukko-chat-mic-btn:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+}
+
+#kukko-chat-mic-btn.kukko-recording {
+    background: #ef4444;
+    color: #ffffff;
+    border-color: #dc2626;
+    animation: kukko-mic-pulse 0.8s infinite alternate ease-in-out;
+}
+
+@keyframes kukko-mic-pulse {
+    0% { transform: scale(1); box-shadow: 0 0 0 rgba(239, 68, 68, 0.4); }
+    100% { transform: scale(1.12); box-shadow: 0 0 12px rgba(239, 68, 68, 0.8); }
 }
 
 /* Floating Avatar — Pure CSS Parrot */
@@ -684,5 +712,80 @@
         width: 34px;
         height: 26px;
     }
+}
+
+/* Mischief & Interactive Effects */
+#kukko-avatar-btn.kukko-giant {
+    transform: scale(1.55);
+    transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 10;
+}
+
+#kukko-avatar-btn.kukko-tiny {
+    transform: scale(0.45);
+    transition: transform 0.35s ease;
+}
+
+#kukko-avatar-btn.kukko-boss .kukko-head {
+    filter: drop-shadow(0 0 10px #f59e0b) brightness(1.15);
+}
+
+#kukko-avatar-btn.kukko-boss .kukko-parrot::after {
+    content: '🕶️';
+    position: absolute;
+    top: 6px;
+    font-size: 20px;
+    z-index: 10;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+#kukko-companion-root .kukko-pupil {
+    transition: transform 0.08s ease-out;
+}
+
+#kukko-companion-root.kukko-flying {
+    transition: left 0.7s cubic-bezier(0.22, 1, 0.36, 1), top 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes kukko-screen-wobble {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-0.6deg) scale(0.995); }
+    75% { transform: rotate(0.6deg) scale(1.005); }
+}
+
+html.kukko-page-wobble {
+    animation: kukko-screen-wobble 0.25s infinite ease-in-out !important;
+}
+
+.kukko-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #0f172a;
+    color: #f8fafc;
+    border: 2px solid #38bdf8;
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    z-index: 2147483647;
+    opacity: 0;
+    transform: translateY(-16px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 280px;
+}
+
+.kukko-notification.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.kukko-notification strong {
+    color: #38bdf8;
+    font-size: 13px;
 }
 

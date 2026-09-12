@@ -8,11 +8,13 @@
 
     const BACKEND_CONTEXT_URL = 'http://127.0.0.1:8000/api/context';
     const BACKEND_CHAT_URL = 'http://127.0.0.1:8000/api/chat';
+    const BACKEND_VOICE_URL = 'http://127.0.0.1:8000/api/voice';
     const INITIAL_DELAY_MS = 2500;
     const MIN_COOLDOWN_MS = 20000;
     const MAX_TEXT_LENGTH = 4000;
     const CHAT_TIMEOUT_MS = 20000;
     const CONTEXT_TIMEOUT_MS = 25000;
+    const VOICE_TIMEOUT_MS = 45000;
     const MAX_CHAT_HISTORY = 20;
 
     const KNOWN_EMOTIONS = new Set([
@@ -30,9 +32,14 @@
     let currentSpeechBubbleTimeout = null;
     let currentAudioElement = null;
     let currentAudioUrl = null;
+    let currentAudioSourceNode = null;
     let isSpeaking = false;
     let isChatOpen = false;
     let isSendingChat = false;
+    let isRecording = false;
+    let mediaRecorder = null;
+    let recordedAudioChunks = [];
+    let micStopTimeout = null;
 
     // Session Chat History
     const chatHistory = [
@@ -102,6 +109,7 @@
     let chatMessagesEl = null;
     let chatInputEl = null;
     let chatSendBtnEl = null;
+    let chatMicBtnEl = null;
 
     function normalizeEmotion(emotion) {
         const e = (emotion || '').toLowerCase().trim();
@@ -140,7 +148,8 @@
                     } catch (e) {
                         // Safe ignore
                     }
-});
+                });
+            });
 
             let visibleText = bodyClone.innerText || bodyClone.textContent || '';
             visibleText = visibleText.replace(/\s+/g, ' ').trim();
@@ -196,6 +205,7 @@
                 <div id="kukko-chat-messages"></div>
                 <div id="kukko-chat-footer">
                     <input type="text" id="kukko-chat-input" placeholder="Type a message to Kukko..." autocomplete="off" />
+                    <button id="kukko-chat-mic-btn" title="Talk to Kukko">🎤</button>
                     <button id="kukko-chat-send-btn" title="Send">➤</button>
                 </div>
             </div>
@@ -237,6 +247,7 @@
         chatMessagesEl = document.getElementById('kukko-chat-messages');
         chatInputEl = document.getElementById('kukko-chat-input');
         chatSendBtnEl = document.getElementById('kukko-chat-send-btn');
+        chatMicBtnEl = document.getElementById('kukko-chat-mic-btn');
 
         const closeBtn = document.getElementById('kukko-close-btn');
         const chatCloseBtn = document.getElementById('kukko-chat-close-btn');
@@ -260,6 +271,12 @@
         chatSendBtnEl.addEventListener('click', () => {
             sendUserChatMessage();
         });
+
+        if (chatMicBtnEl) {
+            chatMicBtnEl.addEventListener('click', () => {
+                toggleVoiceRecording();
+            });
+        }
 
         chatInputEl.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -290,10 +307,12 @@
         if (!chatPanelEl) return;
         isChatOpen = open;
         if (open) {
+            dockCompanion();
             chatPanelEl.classList.add('kukko-chat-open');
             if (chatInputEl) chatInputEl.focus();
             scrollChatToBottom();
         } else {
+            if (isRecording) stopVoiceRecording();
             chatPanelEl.classList.remove('kukko-chat-open');
         }
     }
@@ -459,7 +478,7 @@
 
         stopAudioPlayback();
         if (audioB64) {
-            playBase64Audio(audioB64, safeReply);
+            playBase64Audio(audioB64, safeReply, emotion);
         } else if (safeReply) {
             tryWebSpeechSynthesis(safeReply);
         } else {
@@ -492,8 +511,53 @@
         }, ms);
     }
 
+    // --- Web Audio Character Processing (Sarvam TTS post-processor) ---
+    let _audioCtx = null;
+    function getAudioContext() {
+        try {
+            if (!_audioCtx || _audioCtx.state === 'closed') {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (AudioCtx) _audioCtx = new AudioCtx();
+            }
+            if (_audioCtx && _audioCtx.state === 'suspended') {
+                _audioCtx.resume().catch(() => {});
+            }
+        } catch (e) {
+            _audioCtx = null;
+        }
+        return _audioCtx;
+    }
+
+    const EMOTION_PROFILES = {
+        sarcastic: { playbackRate: 1.05, filterGain: 3,  distortion: 8 },
+        happy:     { playbackRate: 1.07, filterGain: 4,  distortion: 10 },
+        excited:   { playbackRate: 1.09, filterGain: 5,  distortion: 12 },
+        annoyed:   { playbackRate: 1.06, filterGain: 3,  distortion: 16 },
+        angry:     { playbackRate: 1.08, filterGain: 3,  distortion: 20 },
+        surprised: { playbackRate: 1.09, filterGain: 5,  distortion: 8 },
+        sleepy:    { playbackRate: 0.96, filterGain: -1, distortion: 0 },
+        confused:  { playbackRate: 1.03, filterGain: 2,  distortion: 4 },
+        thinking:  { playbackRate: 0.98, filterGain: 0,  distortion: 0 },
+        neutral:   { playbackRate: 1.02, filterGain: 1,  distortion: 4 },
+        default:   { playbackRate: 1.04, filterGain: 2,  distortion: 6 },
+    };
+
+    function makeDistortionCurve(amount) {
+        const n = 256;
+        const curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i * 2) / n - 1;
+            curve[i] = amount === 0 ? x : ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+        }
+        return curve;
+    }
+
     function stopAudioPlayback() {
         clearSpeechWatchdog();
+        if (currentAudioSourceNode) {
+            try { currentAudioSourceNode.stop(); } catch (e) {}
+            currentAudioSourceNode = null;
+        }
         if (currentAudioElement) {
             try {
                 currentAudioElement.pause();
@@ -509,26 +573,87 @@
             try { window.speechSynthesis.cancel(); } catch (e) {}
         }
         isSpeaking = false;
-        if (avatarBtnEl && !isChatOpen && !isSendingChat) {
+        if (avatarBtnEl && !isChatOpen && !isSendingChat && !isRecording) {
             setParrotState('idle');
         }
     }
 
-    function playBase64Audio(base64Str, fallbackText) {
-        try {
-            stopAudioPlayback();
+    async function playBase64Audio(base64Str, fallbackText, emotion = 'neutral') {
+        stopAudioPlayback();
+        if (!base64Str) {
+            if (fallbackText) tryWebSpeechSynthesis(fallbackText);
+            return;
+        }
 
+        const normEmotion = normalizeEmotion(emotion);
+        const profile = EMOTION_PROFILES[normEmotion] || EMOTION_PROFILES.default;
+
+        // Try Web Audio API processing first for rich parrot character sound
+        try {
+            const ctx = getAudioContext();
+            if (ctx) {
+                const binaryStr = window.atob(base64Str);
+                const len = binaryStr.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+                const audioBuf = await ctx.decodeAudioData(bytes.buffer.slice(0));
+                const source = ctx.createBufferSource();
+                source.buffer = audioBuf;
+                source.playbackRate.value = profile.playbackRate;
+
+                const shaper = ctx.createWaveShaper();
+                shaper.curve = makeDistortionCurve(profile.distortion);
+                shaper.oversample = '2x';
+
+                const highshelf = ctx.createBiquadFilter();
+                highshelf.type = 'highshelf';
+                highshelf.frequency.value = 3000;
+                highshelf.gain.value = profile.filterGain;
+
+                source.connect(shaper);
+                shaper.connect(highshelf);
+                highshelf.connect(ctx.destination);
+
+                currentAudioSourceNode = source;
+                isSpeaking = true;
+                setParrotState('talking');
+                armSpeechWatchdog(20000);
+
+                source.onended = () => {
+                    if (currentAudioSourceNode === source) {
+                        currentAudioSourceNode = null;
+                        isSpeaking = false;
+                        clearSpeechWatchdog();
+                        if (!isChatOpen && !isSendingChat && !isRecording) {
+                            setParrotState('idle');
+                        }
+                    }
+                };
+
+                source.start(0);
+                return;
+            }
+        } catch (webAudioErr) {
+            console.warn('[Kukko] Web Audio processing fallback:', webAudioErr.message);
+        }
+
+        // Plain HTMLAudioElement fallback
+        try {
             const binaryStr = window.atob(base64Str);
             const len = binaryStr.length;
             const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryStr.charCodeAt(i);
-            }
+            for (let i = 0; i < len; i++) bytes[i] = binaryStr.charCodeAt(i);
             const blob = new Blob([bytes], { type: 'audio/wav' });
             const blobUrl = URL.createObjectURL(blob);
             currentAudioUrl = blobUrl;
 
             const audio = new Audio(blobUrl);
+            audio.playbackRate = profile.playbackRate;
+            if ('preservesPitch' in audio) audio.preservesPitch = false;
+            if ('mozPreservesPitch' in audio) audio.mozPreservesPitch = false;
+            if ('webkitPreservesPitch' in audio) audio.webkitPreservesPitch = false;
+
             currentAudioElement = audio;
             isSpeaking = true;
             setParrotState('talking');
@@ -542,7 +667,9 @@
                 isSpeaking = false;
                 currentAudioElement = null;
                 clearSpeechWatchdog();
-                setParrotState('idle');
+                if (!isChatOpen && !isSendingChat && !isRecording) {
+                    setParrotState('idle');
+                }
             };
 
             audio.onerror = () => {
@@ -553,27 +680,168 @@
                 isSpeaking = false;
                 currentAudioElement = null;
                 clearSpeechWatchdog();
-                setParrotState('idle');
+                if (!isChatOpen && !isSendingChat && !isRecording) {
+                    setParrotState('idle');
+                }
                 tryWebSpeechSynthesis(fallbackText);
             };
 
-            audio.play().catch(err => {
-                console.warn('[Kukko] Autoplay blocked:', err.message);
-                if (currentAudioUrl === blobUrl) {
-                    URL.revokeObjectURL(blobUrl);
-                    currentAudioUrl = null;
-                }
-                isSpeaking = false;
-                currentAudioElement = null;
-                clearSpeechWatchdog();
-                setParrotState('idle');
-                tryWebSpeechSynthesis(fallbackText);
-            });
+            await audio.play();
         } catch (err) {
-            console.warn('[Kukko] Audio decode failed:', err.message);
+            console.warn('[Kukko] Audio playback fallback:', err.message);
             isSpeaking = false;
-            setParrotState('idle');
+            if (!isChatOpen && !isSendingChat && !isRecording) {
+                setParrotState('idle');
+            }
             tryWebSpeechSynthesis(fallbackText);
+        }
+    }
+
+    // --- Voice Recording & Microphone Handlers ---
+    async function toggleVoiceRecording() {
+        if (isRecording) {
+            stopVoiceRecording();
+        } else {
+            startVoiceRecording();
+        }
+    }
+
+    async function startVoiceRecording() {
+        if (isRecording || isSendingChat) return;
+        try {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                say("Microphone not supported in this tab.", 'annoyed', 2500);
+                return;
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            recordedAudioChunks = [];
+
+            let options = { mimeType: 'audio/webm;codecs=opus' };
+            if (typeof MediaRecorder !== 'undefined') {
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'audio/webm' };
+                    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                        options = {};
+                    }
+                }
+            }
+
+            mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    recordedAudioChunks.push(e.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                try {
+                    stream.getTracks().forEach(t => t.stop());
+                } catch (e) {}
+                processRecordedVoice();
+            };
+
+            mediaRecorder.start(100);
+            isRecording = true;
+            setParrotState('listening');
+            if (chatMicBtnEl) {
+                chatMicBtnEl.classList.add('kukko-recording');
+                chatMicBtnEl.textContent = '⏹';
+                chatMicBtnEl.title = 'Stop Speaking';
+            }
+            say('Listening... speak now! 🦜', 'neutral', 4000);
+
+            micStopTimeout = setTimeout(() => {
+                if (isRecording) stopVoiceRecording();
+            }, 15000);
+        } catch (err) {
+            console.warn('[Kukko] Mic error:', err.message);
+            isRecording = false;
+            setParrotState('idle');
+            say("Microphone access denied! 🦜", 'error', 3000);
+        }
+    }
+
+    function stopVoiceRecording() {
+        if (!isRecording) return;
+        isRecording = false;
+        if (micStopTimeout) {
+            clearTimeout(micStopTimeout);
+            micStopTimeout = null;
+        }
+        if (chatMicBtnEl) {
+            chatMicBtnEl.classList.remove('kukko-recording');
+            chatMicBtnEl.textContent = '🎤';
+            chatMicBtnEl.title = 'Talk to Kukko';
+        }
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            try { mediaRecorder.stop(); } catch (e) {}
+        }
+    }
+
+    async function processRecordedVoice() {
+        if (!recordedAudioChunks.length) {
+            setParrotState('idle');
+            return;
+        }
+
+        const mimeType = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+        const audioBlob = new Blob(recordedAudioChunks, { type: mimeType });
+        recordedAudioChunks = [];
+
+        setParrotState('thinking');
+
+        const thinkingDiv = document.createElement('div');
+        thinkingDiv.id = 'kukko-thinking-indicator';
+        thinkingDiv.className = 'kukko-chat-msg kukko-msg-thinking';
+        thinkingDiv.textContent = 'Processing your voice... 🦜';
+        if (chatMessagesEl) {
+            chatMessagesEl.appendChild(thinkingDiv);
+            scrollChatToBottom();
+        }
+
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'recording.webm');
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), VOICE_TIMEOUT_MS);
+
+        try {
+            const res = await fetch(BACKEND_VOICE_URL, {
+                method: 'POST',
+                body: formData,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            removeThinkingIndicator();
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+
+            const userTranscript = (data.transcript || '').trim();
+            const replyText = (typeof data.reply === 'string' && data.reply.trim()) ? data.reply : 'Squawk!';
+            const emotion = normalizeEmotion(data.emotion);
+
+            if (userTranscript) {
+                appendChatMessage({ sender: 'user', text: userTranscript });
+                recordChatMessage('user', userTranscript);
+            }
+
+            appendChatMessage({ sender: 'kukko', text: replyText, emotion: emotion });
+            recordChatMessage('kukko', replyText);
+            renderChatMessages();
+
+            showReaction(replyText, emotion, data.audio || '');
+
+        } catch (err) {
+            clearTimeout(timeoutId);
+            removeThinkingIndicator();
+            setParrotEmotion('error');
+            setParrotState('idle');
+            const fallbackReply = "Voice brain connection failed. Check that backend is running! 🦜";
+            appendChatMessage({ sender: 'kukko', text: fallbackReply, emotion: 'error' });
+            renderChatMessages();
+            console.warn('[Kukko] Voice API error:', err.message);
         }
     }
 
@@ -724,134 +992,184 @@
         }, 3000);
     }
 
-    /* —– Integrated friend's mischief engine —– */
+    /* —– Interactive Behaviors & Mischief Engine —– */
 
-function scheduleMischief() {
+    function say(text, emotion = 'neutral', duration = 2500) {
+        if (!speechBubbleEl || !speechTextEl) return;
+        speechTextEl.textContent = text;
+        setParrotEmotion(emotion);
+        speechBubbleEl.classList.add('kukko-visible');
+        if (currentSpeechBubbleTimeout) clearTimeout(currentSpeechBubbleTimeout);
+        currentSpeechBubbleTimeout = setTimeout(() => {
+            hideSpeechBubble();
+        }, duration);
+    }
 
-  setTimeout(
-    mischief,
+    let mouseX = -1000;
+    let mouseY = -1000;
+    let lastEscapeTime = 0;
+    let lastTypingReaction = 0;
 
-    10000 +
-    Math.random() * 15000
-  );
-}
+    document.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+        updatePupils();
+        checkCursorAvoidance();
+    }, { passive: true });
 
-function mischief() {
+    function updatePupils() {
+        if (!avatarBtnEl) return;
+        const pupils = avatarBtnEl.querySelectorAll('.kukko-pupil');
+        if (!pupils || !pupils.length) return;
+        const rect = avatarBtnEl.getBoundingClientRect();
+        const eyeX = rect.left + rect.width / 2;
+        const eyeY = rect.top + 20;
+        const dx = mouseX - eyeX;
+        const dy = mouseY - eyeY;
+        const angle = Math.atan2(dy, dx);
+        const dist = Math.min(3, Math.sqrt(dx * dx + dy * dy) / 80);
+        const ox = Math.cos(angle) * dist;
+        const oy = Math.sin(angle) * dist;
+        pupils.forEach(pupil => {
+            pupil.style.transform = `translate(${ox.toFixed(1)}px, ${oy.toFixed(1)}px)`;
+        });
+    }
 
-  if (busy || talking || flying) {
+    function dockCompanion() {
+        if (!rootEl) return;
+        rootEl.style.left = '';
+        rootEl.style.top = '';
+        rootEl.style.bottom = '24px';
+        rootEl.style.right = '24px';
+    }
 
-    scheduleMischief();
-
-    return;
-  }
-
-  const action = Math.floor(Math.random() * 5);
-
-  switch (action) {
-
-    case 0:
-
-      kukko.classList.add("giant");
-
-      say(
-
-        "INCREASING KUKKO SIZE...",
-
-        1600
-
-      );
-
-      setTimeout(() => {
-
-        say("PERFECT.", 1200);
-
-      }, 1300);
-
-      setTimeout(() => {
-
-        kukko.classList.remove("giant");
-
-      }, 4200);
-
-      break;
-
-    case 1:
-
-      kukko.classList.add("tiny");
-
-      say("KUKKO SIZE: 37%", 1500);
-
-      setTimeout(() => {
-
-        kukko.classList.remove("tiny");
-
-      }, 4000);
-
-      break;
-
-    case 2:
-
-      document.documentElement.classList.add("kukko-page-wobble");
-
-      say("CALIBRATING SCREEN...", 1500);
-
-      setTimeout(() => {
-
-        document.documentElement.classList.remove("kukko-page-wobble");
-
-      }, 1100);
-
-      break;
-
-    case 3:
-
-      kukko.classList.add("boss");
-
-      say("KUKKO HAS ASSUMED CONTROL.", 2200);
-
-      setTimeout(() => {
-
-        say("JUST KIDDING. 😈", 1500);
-
-      }, 2300);
-
-      setTimeout(() => {
-
-        kukko.classList.remove("boss");
-
-      }, 3900);
-
-      break;
-
-    case 4:
-
-      const notification = document.createElement("div");
-
-      notification.className = "kukko-notification";
-
-      notification.innerHTML = "<strong>🐦 KUKKO SYSTEM</strong><span>Important bird activity detected.</span>";
-
-      document.documentElement.appendChild(notification);
-
-      setTimeout(() => notification.classList.add("show"), 20);
-
-      setTimeout(() => {
-
-        notification.classList.remove("show");
-
+    function flyToRandomOffset() {
+        if (!rootEl || isChatOpen) return;
+        rootEl.classList.add('kukko-flying');
+        const maxLeft = Math.max(20, window.innerWidth - 320);
+        const maxTop = Math.max(20, window.innerHeight - 200);
+        const targetLeft = Math.floor(20 + Math.random() * (maxLeft - 20));
+        const targetTop = Math.floor(40 + Math.random() * (maxTop - 40));
+        rootEl.style.left = `${targetLeft}px`;
+        rootEl.style.top = `${targetTop}px`;
+        rootEl.style.bottom = 'auto';
+        rootEl.style.right = 'auto';
         setTimeout(() => {
+            if (rootEl) rootEl.classList.remove('kukko-flying');
+        }, 800);
+    }
 
-          notification.remove();
+    function checkCursorAvoidance() {
+        if (!rootEl || isChatOpen || isSendingChat || isSpeaking) return;
+        const now = Date.now();
+        if (now - lastEscapeTime < 4000) return;
+        const rect = rootEl.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = cx - mouseX;
+        const dy = cy - mouseY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 75 && dist > 0) {
+            lastEscapeTime = now;
+            setParrotEmotion('surprised');
+            say("TOO CLOSE! 😤", 'annoyed', 1500);
+            flyToRandomOffset();
+        }
+    }
 
-        }, 300);
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1) return;
+        if (document.activeElement === chatInputEl) return;
+        const now = Date.now();
+        if (now - lastTypingReaction < 20000) return;
+        if (Math.random() < 0.25) {
+            lastTypingReaction = now;
+            const typingQuotes = [
+                "HEY! What are you typing so loudly? 👀",
+                "Kukko is supervising your work.",
+                "Is that an email or an essay? 🦜",
+                "Don't make typos, I'm watching. 😂"
+            ];
+            const quote = typingQuotes[Math.floor(Math.random() * typingQuotes.length)];
+            say(quote, 'sarcastic', 2200);
+        }
+    }, true);
 
-      }, 2800);
+    function scheduleMischief() {
+        setTimeout(mischief, 18000 + Math.random() * 20000);
+    }
 
-      break;
-  }
+    function mischief() {
+        if (isSpeaking || isChatOpen || isSendingChat || !avatarBtnEl) {
+            scheduleMischief();
+            return;
+        }
 
-  scheduleMischief();
-}
-});
+        const action = Math.floor(Math.random() * 5);
+        switch (action) {
+            case 0:
+                avatarBtnEl.classList.add('kukko-giant');
+                say('INCREASING KUKKO SIZE...', 'excited', 1600);
+                setTimeout(() => say('PERFECT.', 'happy', 1200), 1400);
+                setTimeout(() => {
+                    if (avatarBtnEl) avatarBtnEl.classList.remove('kukko-giant');
+                }, 4000);
+                break;
+            case 1:
+                avatarBtnEl.classList.add('kukko-tiny');
+                say('KUKKO SIZE: 37%', 'surprised', 1500);
+                setTimeout(() => {
+                    if (avatarBtnEl) avatarBtnEl.classList.remove('kukko-tiny');
+                }, 3800);
+                break;
+            case 2:
+                document.documentElement.classList.add('kukko-page-wobble');
+                say('CALIBRATING SCREEN...', 'sarcastic', 1500);
+                setTimeout(() => {
+                    document.documentElement.classList.remove('kukko-page-wobble');
+                }, 1100);
+                break;
+            case 3:
+                avatarBtnEl.classList.add('kukko-boss');
+                say('KUKKO HAS ASSUMED CONTROL. 🕶️', 'angry', 2000);
+                setTimeout(() => say('JUST KIDDING. 😈', 'happy', 1500), 2200);
+                setTimeout(() => {
+                    if (avatarBtnEl) avatarBtnEl.classList.remove('kukko-boss');
+                }, 3900);
+                break;
+            case 4:
+                const notification = document.createElement('div');
+                notification.className = 'kukko-notification';
+                notification.innerHTML = '<strong>🐦 KUKKO SYSTEM</strong><span>Important bird activity detected.</span>';
+                document.body.appendChild(notification);
+                setTimeout(() => notification.classList.add('show'), 20);
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                    setTimeout(() => notification.remove(), 300);
+                }, 2800);
+                break;
+        }
 
-});
+        scheduleMischief();
+    }
+
+    /* Expose window.KukkoCompanion for popup.js caller */
+    window.KukkoCompanion = {
+        trigger: function (force = true) {
+            return triggerProactiveReaction(force);
+        }
+    };
+
+    /* Bootstrap */
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            initKukkoUI();
+            initProactiveEngine();
+            scheduleMischief();
+        });
+    } else {
+        initKukkoUI();
+        initProactiveEngine();
+        scheduleMischief();
+    }
+})();
